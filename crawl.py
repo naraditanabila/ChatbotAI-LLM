@@ -3,7 +3,7 @@ from bs4 import BeautifulSoup
 import json
 
 # Initialize Crawlbase API with your token
-crawling_api = CrawlingAPI({ 'token': 'YOUR_CRAWLBASE_TOKEN' })
+crawling_api = CrawlingAPI({ 'token': 'yiXb5P4RU8PUjNFim7gIxA' })
 
 # Function to scrape Tokopedia product page
 def scrape_product_page(url):
@@ -35,10 +35,3 @@ def store_data_in_json(data, filename='tokopedia_product_data.json'):
     with open(filename, 'w') as json_file:
         json.dump(data, json_file, indent=4)
     print(f"Data stored in {filename}")
-
-# Scraping product page and saving data
-url = 'https://www.tokopedia.com/thebigboss/headset-bluetooth-tws-earphone-bluetooth-stereo-bass-tbb250-beige-8d839'
-product_data = scrape_product_page(url)
-
-if product_data:
-    store_data_in_json(product_data)

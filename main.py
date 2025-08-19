@@ -2,6 +2,9 @@ import streamlit as st
 import os
 import google.generativeai as genai
 from dotenv import load_dotenv
+from bs4 import BeautifulSoup
+from crawlbase import CrawlingAPI
+#from crawl import scrape_product_page, store_data_in_json
 
 # Load environment variables from .env file
 load_dotenv()
@@ -15,15 +18,6 @@ st.write("This is a simple chatbot app using Google Gemini AI.")
 
 # Initialize the Generative AI model
 model = genai.GenerativeModel('gemini-1.5-flash')
-
-# --- Roles Dictionary ---
-#ROLES = {
-#    "default": "You are a helpful assistant.",
-#    "developer": "You are a software developer.",
-#    "teacher": "You are a knowledgeable teacher.",
-#    "doctor": "You are a medical professional.",
-#}
-
 
 ROLES = {
     "General Assistant": {
@@ -58,6 +52,17 @@ ROLES = {
         - Provide practice questions or exercises when appropriate""",
         "icon": "📚",
     },
+    #Tambah role Sales Engineer
+    "Sales Engineer": {
+        "system_prompt": """You are a sales engineer. You should:
+        - Coordinate between sales and technical teams
+        - Understand customer requirements and technical specifications
+        - Prepare business offerings and technical proposals
+        - Review offering letters from vendors and ensure they meet customer needs
+        - Benchmark item prices from vendors to ensure competitiveness
+        - Negotiate with vendors to get the best price for customers""",
+        "icon": "💼",
+    },
 }  
 
 # Fungsi extract text dari PDF
@@ -68,6 +73,131 @@ def extract_text_from_pdf(pdf_file):
     for page in reader.pages:
         text += page.extract_text() or ""  # tambahkan "" kalau None
     return text
+
+# Fungsi extract text dari file Excel
+def extract_text_from_excel(excel_file):
+    import pandas as pd
+    text = ""
+    df = pd.read_excel(excel_file)
+    for column in df.columns:
+        text += f"{column}:\n"
+        text += "\n".join(df[column].astype(str).tolist()) + "\n\n"
+    return text
+
+# Fungsi crawlbase untuk scraping halaman produk Tokopedia
+crawling_api = CrawlingAPI({'token': 'yiXb5P4RU8PUjNFim7gIxA'})
+def scrape_product_page(url):
+    options = {
+        'ajax_wait': 'true',
+        'page_wait': '5000'
+    }
+    response = crawling_api.get(url, options)
+
+    if response['headers']['pc_status'] == '200':
+        html_content = response['body'].decode('utf-8')
+        soup = BeautifulSoup(html_content, 'html.parser')
+
+        # Extracting Product Data
+        product_data = {}
+        product_data['name'] = soup.select_one('h1[data-testid="lblPDPDetailProductName"]').text.strip()
+        product_data['price'] = soup.select_one('div[data-testid="lblPDPDetailProductPrice"]').text.strip()
+        product_data['store_name'] = soup.select_one('a[data-testid="llbPDPFooterShopName"]').text.strip()
+        product_data['description'] = soup.select_one('div[data-testid="lblPDPDescriptionProduk"]').text.strip()
+        product_data['images_url'] = [img['src'] for img in soup.select('button[data-testid="PDPImageThumbnail"] img.css-1c345mg')]
+
+        return product_data
+    else:
+        print(f"Failed to fetch the page. Status code: {response['headers']['pc_status']}")
+        return None
+    
+# Fungsi crawlbase untuk scraping halaman produk Shopee
+def scrape_shopee_product_page(url):
+    options = {
+        'ajax_wait': 'true',
+        'page_wait': '5000'
+    }
+    response = crawling_api.get(url, options)
+
+    if response['headers']['pc_status'] == '200':
+        html_content = response['body'].decode('utf-8')
+        soup = BeautifulSoup(html_content, 'html.parser')
+
+        # Extracting Product Data
+        product_data = {}
+        product_data['name'] = soup.select_one('div[data-sqe="name"]').text.strip()
+        product_data['price'] = soup.select_one('div[data-sqe="price"]').text.strip()
+        product_data['store_name'] = soup.select_one('div[data-sqe="shop"]').text.strip()
+        product_data['description'] = soup.select_one('div[data-sqe="description"]').text.strip()
+        product_data['images_url'] = [img['src'] for img in soup.select('img[data-sqe="thumbnail"]')]
+
+        return product_data
+    else:
+        print(f"Failed to fetch the page. Status code: {response['headers']['pc_status']}")
+        return None
+    
+# Fungsi cari url produk di Tokopedia dengan nama produk dan review lebih dari 1
+def find_tokopedia_product_url(product_name, min_reviews=1):
+    search_url = f"https://www.tokopedia.com/search?st=product&q={product_name}"
+    options = {
+        'ajax_wait': 'true',
+        'page_wait': '5000'
+    }
+    response = crawling_api.get(search_url, options)
+
+    if response['headers']['pc_status'] == '200':
+        html_content = response['body'].decode('utf-8')
+        soup = BeautifulSoup(html_content, 'html.parser')
+
+        # Find product links with more than min_reviews reviews
+        products = soup.select('a[data-testid="lnkProductName"]')
+        for product in products:
+            reviews_count = int(product.select_one('span[data-testid="lblProductReviewCount"]').text.strip())
+            if reviews_count >= min_reviews:
+                return product['href']
+    
+    print("No product found with the specified criteria.")
+    return None
+
+# Fungsi cari url produk di Shopee dengan nama produk dan review lebih dari 1
+def find_shopee_product_url(product_name, min_reviews=1):
+    search_url = f"https://shopee.co.id/search?keyword={product_name}"
+    options = {
+        'ajax_wait': 'true',
+        'page_wait': '5000'
+    }
+    response = crawling_api.get(search_url, options)
+
+    if response['headers']['pc_status'] == '200':
+        html_content = response['body'].decode('utf-8')
+        soup = BeautifulSoup(html_content, 'html.parser')
+
+        # Find product links with more than min_reviews reviews
+        products = soup.select('a[data-sqe="link"]')
+        for product in products:
+            reviews_count = int(product.select_one('span[data-sqe="review"]').text.strip())
+            if reviews_count >= min_reviews:
+                return product['href']
+    
+    print("No product found with the specified criteria.")
+    return None
+    
+# Fungsi cek kewajaran harga produk
+def check_price_fairness(item_name, price, vendor_prices):
+    """
+    Check if the given price is fair compared to vendor prices.
+    Returns a message indicating whether the price is fair or not.
+    """
+    if not vendor_prices:
+        return "No vendor prices available for comparison."
+    
+    average_price = sum(vendor_prices) / len(vendor_prices)
+    if price < average_price * 0.9:
+        return f"The price of {item_name} is below the average vendor price. It seems like a good deal!"
+    elif price > average_price * 1.1:
+        return f"The price of {item_name} is above the average vendor price. It might be overpriced."
+    else:
+        return f"The price of {item_name} is within the normal range compared to vendor prices."
+    
 
 # --- Sidebar Configuration ---
 with st.sidebar:
@@ -214,3 +344,10 @@ if prompt := st.chat_input("Type your message here..."):
 
     # Tambahkan respons dari asisten ke riwayat chat untuk ditampilkan di interaksi selanjutnya
     st.session_state.messages.append({"role": "assistant", "content": response_text})
+
+# Scraping product page and saving data
+#url = 'https://www.tokopedia.com/thebigboss/headset-bluetooth-tws-earphone-bluetooth-stereo-bass-tbb250-beige-8d839'
+#product_data = scrape_product_page(url)
+
+#if product_data:
+#    store_data_in_json(product_data)
