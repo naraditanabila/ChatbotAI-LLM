@@ -401,17 +401,18 @@ if "messages" not in st.session_state:
 if "current_project" not in st.session_state:
     st.session_state.current_project = selected_project
 
-# Atur ulang percakapan jika role atau project berganti
-if (st.session_state.current_role != selected_role or 
-    st.session_state.current_project != selected_project):
-    st.session_state.messages = []  # Kosongkan riwayat chat
-    st.session_state.current_role = selected_role  # Perbarui role saat ini
-    st.session_state.current_project = selected_project  # Perbarui proyek saat ini
+if (st.session_state.current_role != selected_role):
     # Tambahkan pesan selamat datang untuk role baru
+    st.session_state.current_role = selected_role  # Perbarui role saat ini
     welcome_message = f"**{selected_role} {ROLE[selected_role]['icon']}**: {ROLE[selected_role]['description']}"
     st.session_state.messages.append({"role": "assistant", "content": welcome_message})
-    st.rerun()  # Muat ulang aplikasi untuk menerapkan perubahan
 
+# Atur ulang percakapan jika role atau project berganti
+if (st.session_state.current_project != selected_project):
+    st.session_state.messages = []  # Kosongkan riwayat chat
+    st.session_state.current_project = selected_project  # Perbarui proyek saat ini
+    st.rerun()  # Muat ulang aplikasi untuk menerapkan perubahan
+    
 
 #--- Main Chat Interface ---
 # Display project's name
