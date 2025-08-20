@@ -29,40 +29,30 @@ def get_telkom_client():
         default_headers={"x-api-key": api_key},
     )
 
-st.set_page_config(page_title="AI Chatbot App", page_icon="🤖", layout="wide")
-st.title("My First AI Chatbot App")
+st.set_page_config(page_title="Chatbot CPE for Solution Team", page_icon="🤖", layout="wide")
+st.title("AI Chatbot App for Solution Team")
 st.write("This is a simple chatbot app using Google Gemini AI.")
 
 # Initialize the Generative AI model
 model = genai.GenerativeModel('gemini-1.5-flash')
 
-MENU = {
+ROLE = {
         "Price Researcher": {
-            "system_prompt": "Kamu adalah seorang peneliti harga. Tugas kamu adalah menemukan harga terbaik untuk produk di berbagai platform e-commerce.",
+            "system_prompt": "Kamu adalah seorang peneliti harga. Tugas kamu adalah menemukan harga terbaik untuk produk di berbagai platform e-commerce. Jangan terlalu banyak bertanya tentang spesifikasi teknis. Kamu dapat menggunakan asumsi spek teknis sesuai rekomendasi kamu",
             "icon": "💰",
+            "description": "Sebagai peneliti harga, chatbot ini akan mencari dan membandingkan harga produk dari berbagai sumber untuk memberikan rekomendasi terbaik."
         },
         "Offering Reviewer": {
             "system_prompt": "Kamu adalah seorang reviewer penawaran harga dari vendor. Tugas kamu adalah meninjau dan menganalisis penawaran bisnis dari vendor, memastikan penawaran tersebut memenuhi persyaratan pelanggan dan kompetitif di pasar berdasarkan platform e-commerce.",
             "icon": "📄",
-        },
-        "Product Scraper": {
-            "system_prompt": "Kamu adalah ilmuwan produk. Tugas kamu adalah memberikan informasi produk dari platform e-commerce seperti Tokopedia dan Shopee, termasuk detail produk, harga, dan ulasan.",
-            "icon": "🔍",
+            "description": "Sebagai reviewer penawaran, chatbot ini akan mengevaluasi dan memberikan masukan tentang penawaran harga yang diajukan oleh vendor."
         },
         "Knowledge Base Manager": {
             "system_prompt": "Kamu adalah knowledge base manager. Tugas kamu adalah mengelola dan memelihara basis pengetahuan untuk chatbot, termasuk mengunggah dan memproses dokumen.",
             "icon": "📚",
+            "description": "Sebagai knowledge base manager, chatbot ini akan bertanggung jawab untuk memastikan bahwa informasi dalam basis pengetahuan selalu diperbarui dan relevan."
         },
     }
-
-# Fungsi extract text dari PDF
-def extract_text_from_pdf(pdf_file):
-    import PyPDF2
-    text = ""
-    reader = PyPDF2.PdfReader(pdf_file)  # langsung pakai PdfReader
-    for page in reader.pages:
-        text += page.extract_text() or ""  # tambahkan "" kalau None
-    return text
 
 # Fungsi extract text dari file Excel
 def extract_text_from_excel(excel_file):
@@ -202,42 +192,82 @@ def scrape_shopee_product_page(url):
     print("Failed to scrape the product page.")
     return None
 
-# Fungsi update knowledge base dari hasil scraping
-def update_knowledge_base(product_data, platform):
+#Fungsi mendapatkan harga produk tertinggi dari beberapa e-commerce
+def get_max_product_price(product_name, margin=0.2):
     """
-    Update the knowledge base with product data from scraping.
+    Get the maximum vendor price for a product across multiple e-commerce platforms.
     
     Args:
-        product_data (dict): Dictionary containing product details.
-        platform (str): The e-commerce platform (e.g., "Tokopedia", "Shopee").
+        product_name (str): The name of the product to search for.
+        margin (float): The acceptable price margin for products.
     
     Returns:
-        str: Updated knowledge base entry.
+        dict: A dictionary containing the platform and the maximum price found.
     """
-    if not product_data:
-        return ""
+    # Cari produk di Tokopedia
+    tokopedia_url = find_tokopedia_product_url(product_name)
+    if tokopedia_url:
+        tokopedia_data = scrape_tokopedia_product_page(tokopedia_url)
+        if tokopedia_data:
+            tokopedia_data['platform'] = 'Tokopedia'
+            tokopedia_data['price'] *= (1 + margin)  # Apply margin
+        else:
+            tokopedia_data = None
+    else:
+        tokopedia_data = None
 
-    entry = f"\n\n=== {platform.upper()} PRODUCT ===\n"
-    entry += f"Name: {product_data['name']}\n"
-    entry += f"Price: Rp{product_data['price']:,}\n"
-    entry += f"URL: {product_data['url']}\n"
+    # Cari produk di Shopee
+    shopee_url = find_shopee_product_url(product_name)
+    if shopee_url:
+        shopee_data = scrape_shopee_product_page(shopee_url)
+        if shopee_data:
+            shopee_data['platform'] = 'Shopee'
+            shopee_data['price'] *= (1 + margin)  # Apply margin
+        else:
+            shopee_data = None
+    else:
+        shopee_data = None
 
-    return entry
-    
-# Fungsi cek kewajaran harga produk
-def is_price_reasonable(product_price, highest_price, margin=0.2):
+    # Bandingkan harga dan pilih yang tertinggi
+    max_price_data = None
+    if tokopedia_data and shopee_data:
+        max_price_data = tokopedia_data if tokopedia_data['price'] > shopee_data['price'] else shopee_data
+    elif tokopedia_data:
+        max_price_data = tokopedia_data
+    elif shopee_data:
+        max_price_data = shopee_data
+
+    return max_price_data
+
+# Fungsi untuk format hasil analisis harga vendor
+def format_vendor_price_analysis(analysis):
     """
-    Cek apakah harga produk wajar tidak melebihi harga tertinggi pasaran yang valid dikalikan margin.
+    Format the vendor price analysis for display.
     
     Args:
-        product_price (float): Harga produk yang akan dicek.
-        highest_price (float): Harga tertinggi dari e-commerce.
-        margin (float): Margin yang diizinkan, default 20% (0.2).
+        analysis (dict): The analysis result containing platform and price.
     
     Returns:
-        bool: True jika harga produk wajar, False jika tidak.
+        str: Formatted string for display.
     """
-    return product_price <= highest_price * (1 + margin)
+    if not analysis:
+        return "No vendor prices found."
+    
+    platform = analysis['platform']
+    price = analysis['price']
+    
+    entry = f"### Vendor Price Analysis\n"
+    entry += f"Platform: {platform}\n"
+    entry += f"Price: Rp{price:,}\n"
+    entry += f"URL: {analysis['url']}\n"
+    entry += f"Product Name: {analysis['name']}\n"
+    entry += f"Reviews Count: {analysis.get('reviews_count', 'N/A')}\n"
+    if platform == "Tokopedia":
+        entry += f"Rating Count: {analysis.get('rating_count', 'N/A')}\n"
+    elif platform == "Shopee":
+        entry += f"Reviews Count: {analysis.get('reviews_count', 'N/A')}\n"
+    else:
+        entry += "Platform not recognized.\n"    
     
 
 # --- Sidebar Configuration ---
@@ -253,12 +283,12 @@ with st.sidebar:
         placeholder="e.g., My Project, AI Chatbot, Price Researcher"
     )
 
-    # --- Sidebar Menu Selection ---
-    st.subheader("📋 Select Menu")
-    selected_menu = st.selectbox(
-        "Choose a menu option:",
-        options=list(MENU.keys()),
-        index=0
+    # --- Sidebar Role Selection ---
+    st.subheader("👤 Role Selection")
+    selected_role = st.selectbox(
+        "Select your role",
+        list(ROLE.keys()),
+        format_func=lambda x: f"{ROLE[x]['icon']} {x}"
     )
 
     # --- Sidebar E-commerce Selection ---
@@ -280,8 +310,35 @@ with st.sidebar:
         step=0.01
     )
 
-    # --- Sidebar Download Knowledge Base ---
-    st.subheader("📥 Download Knowledge Base")
+    # --- Sidebar Knowledge Base ---
+    st.subheader("📥 Knowledge Base")
+    # Inisialisasi 'knowledge_base' di session_state jika belum ada
+    if "knowledge_base" not in st.session_state:
+        st.session_state.knowledge_base = ""
+    # Tombol untuk menambah basis pengetahuan dari chat terakhir
+    if st.button("Add Knowledge from Chat"):
+        # Panggil file knowledge_base.xlsx untuk memuat knowledge base
+        if "knowledge_base_file" not in st.session_state:
+            st.session_state.knowledge_base_file = "knowledge_base.xlsx"
+
+        # Muat basis pengetahuan dari file jika ada
+        if "knowledge_base" not in st.session_state:
+            try:
+                with open(st.session_state.knowledge_base_file, "r") as f:
+                    st.session_state.knowledge_base = f.read()
+            except FileNotFoundError:
+                st.session_state.knowledge_base = ""
+        
+        # Ambil pesan terakhir dari chat
+        if st.session_state.messages:
+            last_message = st.session_state.messages[-1]["content"]
+            # Tambahkan pesan terakhir ke basis pengetahuan
+            st.session_state.knowledge_base += f"\n\n=== CHAT ENTRY ===\n{last_message}"
+            st.success("Knowledge base updated with the latest chat entry.")
+        else:
+            st.warning("No chat messages available to add to the knowledge base.")
+    
+    # Tombol untuk mengunduh basis pengetahuan sebagai file Excel
     if st.button("Download Knowledge Base"):
         if "knowledge_base" in st.session_state and st.session_state.knowledge_base:
             # Simpan basis pengetahuan ke file excel
@@ -309,12 +366,12 @@ with st.sidebar:
 
         # Ekstrak teks dari file-file yang baru diunggah
         new_knowledge = ""
-        for pdf_file in uploaded_files:
-            st.write(f"📄 Processing: {pdf_file.name}")
-            pdf_text = extract_text_from_pdf(pdf_file)
-            if pdf_text:
-                # Tambahkan teks dari PDF ke variabel dengan format penanda
-                new_knowledge += f"\n\n=== DOCUMENT: {pdf_file.name} ===\n{pdf_text}"
+        for excel_file in uploaded_files:
+            st.write(f"📄 Processing: {excel_file.name}")
+            excel_text = extract_text_from_excel(excel_file)
+            if excel_text:
+                # Tambahkan teks dari Excel ke variabel dengan format penanda
+                new_knowledge += f"\n\n=== DOCUMENT: {excel_file.name} ===\n{excel_text}"
 
         # Perbarui basis pengetahuan jika ada konten baru dan belum ada sebelumnya
         if new_knowledge and new_knowledge not in st.session_state.knowledge_base:
@@ -323,18 +380,36 @@ with st.sidebar:
     
 
 # --- Session State Initialization ---
-# Inisialisasi riwayat pesan jika belum ada
+
+# Inisialisasi model Gemini jika belum ada
+if "gemini_model" not in st.session_state:
+    st.session_state["gemini_model"] = "gemini-2.5-flash"
+
+# Inisialisasi role jika belum ada
+if "current_role" not in st.session_state:
+    st.session_state.current_role = selected_role
+
+# Inisialisasi pesan dari assistant sesuai role yang dipilih
 if "messages" not in st.session_state:
     st.session_state.messages = []
+    # Tambahkan pesan selamat datang sesuai role
+    if selected_role in ROLE:
+        welcome_message = f"**{selected_role} {ROLE[selected_role]['icon']}**: {ROLE[selected_role]['description']}"
+        st.session_state.messages.append({"role": "assistant", "content": welcome_message})
 
-# Inisialisasi peran saat ini jika belum ada
+# Inisialisasi proyek saat ini jika belum ada
 if "current_project" not in st.session_state:
     st.session_state.current_project = selected_project
 
-# Atur ulang percakapan jika project berganti
-if st.session_state.current_project != selected_project:
+# Atur ulang percakapan jika role atau project berganti
+if (st.session_state.current_role != selected_role or 
+    st.session_state.current_project != selected_project):
     st.session_state.messages = []  # Kosongkan riwayat chat
+    st.session_state.current_role = selected_role  # Perbarui role saat ini
     st.session_state.current_project = selected_project  # Perbarui proyek saat ini
+    # Tambahkan pesan selamat datang untuk role baru
+    welcome_message = f"**{selected_role} {ROLE[selected_role]['icon']}**: {ROLE[selected_role]['description']}"
+    st.session_state.messages.append({"role": "assistant", "content": welcome_message})
     st.rerun()  # Muat ulang aplikasi untuk menerapkan perubahan
 
 
@@ -342,69 +417,73 @@ if st.session_state.current_project != selected_project:
 # Display project's name
 st.markdown(f"### Project Name: {selected_project}")
 
-# Display chat history
+# Tampilkan riwayat chat
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
-        st.markdown(message["content"]) 
+        st.markdown(message["content"])
+
 
 # Input chat dari pengguna
-if prompt := st.chat_input("Masukkan pertanyaan atau perintah Anda di sini..."):
-    st.session_state.messages.append({"role": "user", "content": prompt})  
+if prompt := st.chat_input("What can I help you with?"):
+    # Tampilkan pesan pengguna di chat
     with st.chat_message("user"):
         st.markdown(prompt)
 
-    #system_prompt =ROLES[selected_role]
-    #response = model.generate_content(prompt)
-
+    # Hasilkan respons dari asisten AI
     with st.chat_message("assistant"):
-        # Initialize Generative AI model
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        # Inisialisasi model Generative AI
+        model = genai.GenerativeModel(st.session_state["gemini_model"])
+
+        # Bangun prompt sistem dengan instruksi peran dan konteks sebelumnya
+        system_prompt = ROLE[selected_role]["system_prompt"]
         
-        # Develop prompt with system menu selection
-        system_prompt = MENU[selected_menu]["system_prompt"]
+        # Tambahkan konteks bahwa ini adalah kelanjutan percakapan jika ada riwayat
+        if len(st.session_state.messages) > 1:  # Jika ada lebih dari pesan selamat datang
+            system_prompt += "\n\nThis is a continuation of our conversation. Please maintain context from previous messages."
+
+        # Identifikasi nama produk yang akan dianalisis
+        if selected_role == "Price Researcher":
+            # Extract product name from query
+            product_name = prompt
+            # Tambahkan nama produk ke dalam prompt sistem
+            system_prompt += f"\n\n=== PRODUCT NAME ===\n{product_name}"
 
         # Tambahkan konteks dari basis pengetahuan jika tersedia
         if "knowledge_base" in st.session_state and st.session_state.knowledge_base:
             system_prompt += f"""
 
-            PENTING: Anda memiliki akses ke basis pengetahuan berikut dari dokumen yang diunggah. Gunakan informasi ini untuk menjawab pertanyaan jika relevan:
+            IMPORTANT: You have access to the following knowledge base from uploaded documents. Use this information to answer questions when relevant:
 
             {st.session_state.knowledge_base}
 
-            Saat menjawab pertanyaan, prioritaskan informasi dari knowledge base jika relevan. Jika jawabannya ditemukan dalam dokumen yang diunggah, sebutkan dari dokumen mana jawabannya berasal.
+            When answering questions, prioritize information from the knowledge base when applicable. If the answer is found in the uploaded documents, mention which document it came from.
             """
 
         # Konversi riwayat pesan ke format yang sesuai untuk Gemini
         chat_history = []
-
         # Tambahkan prompt sistem sebagai pesan pertama jika ini awal percakapan
-        if not st.session_state.messages[:-1]:
+        if not st.session_state.messages:
             chat_history.append({"role": "user", "parts": [system_prompt]})
             chat_history.append(
                 {
                     "role": "model",
                     "parts": [
-                        "Saya mengerti. Saya akan bertindak sesuai peran saya dan menggunakan basis pengetahuan ini jika relevan. Bagaimana saya bisa membantu Anda?"
+                        "I understand. I'll act according to my role and use the knowledge base when relevant. How can I help you?"
                     ],
                 }
             )
-
-        # Tambahkan riwayat percakapan sebelumnya (semua kecuali pesan terakhir dari pengguna)
-        for msg in st.session_state.messages[:-1]:
+        # Tambahkan riwayat percakapan sebelumnya
+        for msg in st.session_state.messages:
             role = "user" if msg["role"] == "user" else "model"
             chat_history.append({"role": role, "parts": [msg["content"]]})
+        # Tambahkan pesan user terbaru ke chat_history
+        chat_history.append({"role": "user", "parts": [prompt]})
 
-        # Start a chat session if you want streaming responses
+        # Mulai sesi chat dengan riwayat yang sudah ada
         chat = model.start_chat(history=chat_history)
-        
-        # Gabungkan prompt sistem dengan pertanyaan pengguna hanya untuk interaksi pertama
-        if not st.session_state.messages[:-1]:
-            full_prompt = f"{system_prompt}\n\nPertanyaan User: {prompt}"
-        else:
-            full_prompt = prompt
 
         # Kirim pesan dan dapatkan respons secara streaming
-        response = chat.send_message(full_prompt, stream=True)
+        response = chat.send_message(prompt, stream=True)
 
         # Tampilkan respons secara streaming (efek ketikan)
         response_text = ""
@@ -418,10 +497,11 @@ if prompt := st.chat_input("Masukkan pertanyaan atau perintah Anda di sini..."):
         # Tampilkan respons final tanpa kursor
         response_container.markdown(response_text)
 
-    # Tambahkan respons dari asisten ke riwayat chat untuk ditampilkan di interaksi selanjutnya
+    # Setelah proses AI selesai, baru tambahkan pesan user dan asisten ke session_state
+    st.session_state.messages.append({"role": "user", "content": prompt})
     st.session_state.messages.append({"role": "assistant", "content": response_text})
 
 # Scraping product page and saving data
-url = 'https://www.tokopedia.com/ruijie/ruijie-rg-rap2260-g-reyee-wi-fi-6-ax1800-ceiling-access-point-1731377086149854387'
-product_data = scrape_tokopedia_product_page(url)
-print(product_data)
+#url = 'https://shopee.co.id/Ruijie-Reyee-RG-RAP2200(F)-Wireless-Ceiling-Access-Point-WiFi-5-1200M-Dual-Band-PoE-Garansi-Resmi-i.517307496.42257544573'
+#product_data = scrape_shopee_product_page(url)
+#print(product_data)
