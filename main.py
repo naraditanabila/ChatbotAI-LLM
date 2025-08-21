@@ -860,7 +860,7 @@ with st.sidebar:
     if st.button("Add Knowledge from Chat"):
         if st.session_state.messages and len(st.session_state.messages) > 0:
             # Get last chat message
-            last_message = st.session_state.messages[-2]["content"]
+            last_message = st.session_state.messages[-1]["content"]
             
             try:
                 from price_researcher import extract_product_name, extract_price
@@ -1006,9 +1006,8 @@ if prompt := st.chat_input("What can I help you with?"):
         # Tambahkan nama proyek ke dalam prompt sistem
         system_prompt += f"\n\n=== PROJECT NAME ===\n{selected_project}"
 
-        # Extract product name from query using the price_researcher module
-        from price_researcher import extract_product_name
-        product_name = extract_product_name(prompt)
+        # Extract product name from query using the price_researcher mod
+        product_name = prompt
 
         # Tambahkan nama produk ke dalam prompt sistem jika ditemukan
         if product_name:
