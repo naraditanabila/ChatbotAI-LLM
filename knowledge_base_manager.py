@@ -87,3 +87,5 @@ def get_price_range(knowledge_base):
         return 0, 0
     prices = [p['nett_price'] for p in knowledge_base['products']]
     return min(prices), max(prices)
+
+
