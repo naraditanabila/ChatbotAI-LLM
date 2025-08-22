@@ -20,10 +20,6 @@ ROLE = {
         "icon": "💰",
         "description": "Sebagai peneliti harga, saya akan mencari dan membandingkan harga produk dari berbagai sumber untuk memberikan rekomendasi harga terbaik."
     },
-    "Knowledge Base Manager": {
-        "icon": "📚",
-        "description": "Sebagai manajer basis pengetahuan, saya akan membantu Anda mengelola basis pengetahuan produk Anda."
-    },
     "Offering Reviewer": {
         "icon": "📋",
         "description": "Sebagai peninjau penawaran, saya akan membantu Anda meninjau dan mengevaluasi penawaran bisnis."
@@ -736,31 +732,6 @@ ROLE = {
             "icon": "📄",
             "description": "Sebagai reviewer penawaran, saya akan mengevaluasi dan memberikan masukan tentang penawaran harga yang diajukan oleh vendor."
         },
-        "Knowledge Base Manager": {
-            "system_prompt": """Kamu adalah knowledge base manager dengan tugas sebagai berikut:
-
-1. PENGELOLAAN DATA:
-   - Kelola informasi dalam basis pengetahuan
-   - Pastikan data selalu terbarui dan akurat
-   - Monitor kualitas dan relevansi data
-
-2. PEMROSESAN INFORMASI:
-   - Ekstrak informasi penting dari dokumen
-   - Kategorisasi data secara sistematis
-   - Standarisasi format data
-
-3. MANAJEMEN KONTEN:
-   - Identifikasi data yang perlu diperbarui
-   - Hapus informasi yang sudah tidak relevan
-   - Tambahkan data baru yang berguna
-
-4. DUKUNGAN PENGGUNAAN:
-   - Bantu pengguna menemukan informasi
-   - Berikan panduan penggunaan knowledge base
-   - Jawab pertanyaan tentang data yang tersedia""",
-            "icon": "📚",
-            "description": "Sebagai knowledge base manager, saya akan bertanggung jawab untuk memastikan bahwa informasi dalam basis pengetahuan selalu diperbarui dan relevan."
-        },
     }
 
 
@@ -786,13 +757,13 @@ with st.sidebar:
     )
 
     # --- Sidebar Platform Selection ---
-    st.subheader("🛒 Platform Selection")
-    st.write("You can select multiple platforms to compare prices.")
-    selected_platform = st.multiselect(
-        "Select Platform",
-        ["Tokopedia", "Shopee", "Summary Solution"],
-        default=["Summary Solution"]
-    )
+    #st.subheader("🛒 Platform Selection")
+    #st.write("You can select multiple platforms to compare prices.")
+    selected_platform = ["Summary Solution"] #st.multiselect(
+        #"Select Platform",
+        #["Tokopedia", "Shopee", "Summary Solution"],
+        #default=["Summary Solution"]
+    
 
     # --- Sidebar Input Margin ---
     st.subheader("💰 Price Margin")
@@ -818,7 +789,7 @@ with st.sidebar:
     
     # Display current knowledge base
     if "knowledge_base" in st.session_state and st.session_state.knowledge_base.get('products'):
-        st.write("Current Knowledge Base:")
+        st.write("Knowledge Base Reference:")
         try:
             # Convert dictionary format to DataFrame with explicit columns
             kb_df = pd.DataFrame(st.session_state.knowledge_base['products'])
@@ -857,74 +828,10 @@ with st.sidebar:
             st.error(f"Error displaying knowledge base: {str(e)}")
     
     # Add new knowledge from chat
-    if st.button("Add Knowledge from Chat"):
-        if st.session_state.messages and len(st.session_state.messages) > 0:
-            # Get last chat message
-            last_message = st.session_state.messages[-1]["content"]
-            
-            try:
-                from price_researcher import extract_product_name, extract_price
-                
-                # Extract product name
-                product_name = extract_product_name(last_message)
-                
-                # Extract price
-                price = extract_price(last_message)
-                
-                # Extract link
-                link_pattern = r"https?://[^\s<>\"']+"
-                link_match = re.search(link_pattern, last_message)
-                link = link_match.group(0) if link_match else None
-                
-                # Check platform from link
-                platform = None
-                if link:
-                    if "tokopedia" in link.lower():
-                        platform = "Tokopedia"
-                    elif "shopee" in link.lower():
-                        platform = "Shopee"
-                    else:
-                        platform = "Summary Solution"
-
-                if price and platform and link and product_name:
-                    try:
-                        # Clean price string
-                        clean_price = price.replace('Rp', '').replace('Rp.', '').replace('IDR', '').strip()
-                        clean_price = clean_price.replace('.', '')
-                        
-                        # Convert to float
-                        price_value = float(clean_price)
-                        
-                        # If value is too small (might be due to format like Rp 1.499), multiply by 1000
-                        if price_value < 10000:  # Assume minimum price is 10,000
-                            price_value *= 1000
-                        
-                        # Create product info
-                        product_data = {
-                            'name': product_name,
-                            'price': price_value,
-                            'platform': platform,
-                            'url': link
-                        }
-                        
-                        # Save to knowledge base
-                        if save_to_knowledge_base(product_data):
-                            # Reload knowledge base to session state
-                            st.session_state.knowledge_base = load_knowledge_base()
-                            st.success("Product information added to knowledge base!")
-                        
-                    except ValueError as e:
-                        st.error(f"Error converting price: {str(e)}")
-                else:
-                    missing = []
-                    if not product_name: missing.append("product name")
-                    if not price: missing.append("price")
-                    if not platform: missing.append("platform")
-                    if not link: missing.append("link")
-                    st.warning(f"Could not extract complete product information. Missing: {', '.join(missing)}")
-            except Exception as e:
-                st.error(f"Error processing message: {str(e)}")
-
+    st.button("Add Knowledge from Chat", disabled=True)
+    #st.write("This feature is still under development.")
+    st.markdown("<p style='color: red; font-size: 12px;'>This feature is still under development.</p>", unsafe_allow_html=True)
+    
 
     # Logic to upload offerings
     st.header("📤 Upload Offerings")
@@ -946,18 +853,10 @@ with st.sidebar:
     if st.session_state.messages and len(st.session_state.messages) > 0:
         last_message = st.session_state.messages[-1]
         if selected_role == "Offering Reviewer":
-            if st.button("Extract Evaluation Results"):
-                excel_data = evaluate_vendor_offerings(last_message["content"], margin)
-                if excel_data:
-                    st.success("Evaluasi penawaran selesai!")
-                    st.download_button(
-                        label="Download Evaluation Results",
-                        data=excel_data,
-                        file_name="business_offerings_result.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    )
-                else:
-                    st.error("Tidak dapat mengekstrak informasi penawaran dari respons terakhir.")
+            st.button("Extract Evaluation Results", disabled=True)
+            #st.write("This feature is still under development.")
+            st.markdown("<p style='color: red; font-size: 12px;'>This feature is still under development.</p>", unsafe_allow_html=True)
+            
 
 # Update session state based on current selections
 if selected_role and st.session_state.current_role != selected_role:
