@@ -660,7 +660,7 @@ def get_telkom_client():
         default_headers={"x-api-key": api_key},
     )
 
-st.set_page_config(page_title="Chatbot CPE for Solution Team", page_icon="🤖", layout="wide")
+st.set_page_config(page_title="Pricing Chatbot for Solution Team", page_icon="🤖", layout="wide")
 st.title("AI Chatbot App for Solution Team")
 st.write("This is a chatbot app using Google Gemini AI for estimating best pricing of CPE items.")
 
