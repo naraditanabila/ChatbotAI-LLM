@@ -8,11 +8,13 @@ import google.generativeai as genai
 from dotenv import load_dotenv
 from bs4 import BeautifulSoup
 from crawlbase import CrawlingAPI
+import base64
 import re
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
+from price_researcher import extract_product_name, extract_price
 
 # Define roles and their configurations
 ROLE = {
@@ -203,9 +205,6 @@ def create_evaluation_excel(products, margin):
         df_data = []
         
         for product in products:
-            # Calculate total offered price
-            total_offered = product['unit_price'] * product['quantity']
-            
             # Get maximum price from knowledge base
             kb_product = None
             if "knowledge_base" in st.session_state:
@@ -220,21 +219,43 @@ def create_evaluation_excel(products, margin):
                 reference_url = kb_product['url']
                 
                 # Determine status
-                status = "Wajar" if total_offered <= max_price else "Tidak Wajar"
+                status = "Wajar" if product['total_price'] <= max_price else "Tidak Wajar"
                 
                 df_data.append({
                     'Nama Produk': product['product_name'],
                     'Jumlah': product['quantity'],
                     'Harga Satuan': product['unit_price'],
-                    'Total Harga Penawaran': total_offered,
+                    'Total Harga Penawaran': product['total_price'],
                     'Harga Maksimum': max_price,
                     'Status': status,
                     'URL Referensi': reference_url
                 })
         
-        return df_data
+        # Create DataFrame
+        df = pd.DataFrame(df_data)
+        
+        # Format currency columns
+        currency_columns = ['Harga Satuan', 'Total Harga Penawaran', 'Harga Maksimum']
+        for col in currency_columns:
+            df[col] = df[col].apply(lambda x: f"Rp {x:,.2f}")
+        
+        # Create Excel file in memory
+        buffer = io.BytesIO()
+        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='Hasil Evaluasi')
+            
+            # Auto-adjust columns width
+            worksheet = writer.sheets['Hasil Evaluasi']
+            for idx, col in enumerate(df.columns):
+                max_length = max(
+                    df[col].astype(str).apply(len).max(),
+                    len(col)
+                )
+                worksheet.column_dimensions[chr(65 + idx)].width = max_length + 2
+        
+        return buffer.getvalue()
     except Exception as e:
-        st.error(f"Error creating evaluation data: {str(e)}")
+        st.error(f"Error creating Excel file: {str(e)}")
         return None
 
 # Fungsi untuk mengunduh file Excel penawaran bisnis
@@ -561,64 +582,6 @@ def extract_evaluation_from_response(response_text):
         st.error(f"Error extracting evaluation data: {str(e)}")
         return None
 
-def create_evaluation_excel(products, margin):
-    """Create Excel file with evaluation results"""
-    try:
-        df_data = []
-        
-        for product in products:
-            # Get maximum price from knowledge base
-            kb_product = None
-            if "knowledge_base" in st.session_state:
-                for kb_item in st.session_state.knowledge_base['products']:
-                    if product['product_name'].lower() in kb_item['product_name'].lower():
-                        kb_product = kb_item
-                        break
-            
-            if kb_product:
-                # Calculate maximum allowed price
-                max_price = float(kb_product['nett_price']) * product['quantity'] * (1 + margin)
-                reference_url = kb_product['url']
-                
-                # Determine status
-                status = "Wajar" if product['total_price'] <= max_price else "Tidak Wajar"
-                
-                df_data.append({
-                    'Nama Produk': product['product_name'],
-                    'Jumlah': product['quantity'],
-                    'Harga Satuan': product['unit_price'],
-                    'Total Harga Penawaran': product['total_price'],
-                    'Harga Maksimum': max_price,
-                    'Status': status,
-                    'URL Referensi': reference_url
-                })
-        
-        # Create DataFrame
-        df = pd.DataFrame(df_data)
-        
-        # Format currency columns
-        currency_columns = ['Harga Satuan', 'Total Harga Penawaran', 'Harga Maksimum']
-        for col in currency_columns:
-            df[col] = df[col].apply(lambda x: f"Rp {x:,.2f}")
-        
-        # Create Excel file in memory
-        buffer = io.BytesIO()
-        with pd.ExcelWriter(buffer, engine='openpyxl') as writer:
-            df.to_excel(writer, index=False, sheet_name='Hasil Evaluasi')
-            
-            # Auto-adjust columns width
-            worksheet = writer.sheets['Hasil Evaluasi']
-            for idx, col in enumerate(df.columns):
-                max_length = max(
-                    df[col].astype(str).apply(len).max(),
-                    len(col)
-                )
-                worksheet.column_dimensions[chr(65 + idx)].width = max_length + 2
-        
-        return buffer.getvalue()
-    except Exception as e:
-        st.error(f"Error creating Excel file: {str(e)}")
-        return None
 
 def evaluate_vendor_offerings(response_text, margin):
     """Evaluate vendor offerings and create Excel file"""
@@ -815,6 +778,7 @@ with st.sidebar:
                     hide_index=True,
                 )
 
+
             # Add download button with better styling
             kb_data = download_knowledge_base()
             if kb_data:
@@ -826,12 +790,73 @@ with st.sidebar:
                 )
         except Exception as e:
             st.error(f"Error displaying knowledge base: {str(e)}")
+
+    if st.button("Update Knowledge Base"):
+        #Refresh display current knowledge base
+        st.session_state.knowledge_base = load_knowledge_base()
+        st.success("Knowledge base updated!")
+        #Display update knowledge base above
+        st.rerun()
     
     # Add new knowledge from chat
-    st.button("Add Knowledge from Chat", disabled=True)
-    #st.write("This feature is still under development.")
-    st.markdown("<p style='color: red; font-size: 12px;'>This feature is still under development.</p>", unsafe_allow_html=True)
-    
+    if st.button("Add Knowledge from Chat"):
+        if st.session_state.messages and len(st.session_state.messages) > 0:
+            # Get last chat message
+            last_message = st.session_state.messages[-1]["content"]
+            
+            try:
+                from price_researcher import extract_product_name, extract_price
+                
+                # Extract product name
+                product_name = extract_product_name(last_message)
+                print(product_name)
+
+                # Extract price
+                price = extract_price(last_message)
+                
+                # Extract link
+                link_pattern = r"https?://[^\s<>\"']+"
+                link_match = re.search(link_pattern, last_message)
+                link = link_match.group(0) if link_match else None
+                
+                # Check platform from link
+                platform = None
+                if link:
+                    if "tokopedia" in link.lower():
+                        platform = "Tokopedia"
+                    elif "shopee" in link.lower():
+                        platform = "Shopee"
+                    else:
+                        platform = "Summary Solution"
+
+                if price and platform and link and product_name:
+                    try:
+                        
+                        # Create product info
+                        product_data = {
+                            'name': product_name,
+                            'price': price,
+                            'platform': platform,
+                            'url': link
+                        }
+                        
+                        # Save to knowledge base
+                        if save_to_knowledge_base(product_data):
+                            # Reload knowledge base to session state
+                            st.session_state.knowledge_base = load_knowledge_base()
+                            st.success("Product information added to knowledge base!")
+                        
+                    except ValueError as e:
+                        st.error(f"Error converting price: {str(e)}")
+                else:
+                    missing = []
+                    if not product_name: missing.append("product name")
+                    if not price: missing.append("price")
+                    if not platform: missing.append("platform")
+                    if not link: missing.append("link")
+                    st.warning(f"Could not extract complete product information. Missing: {', '.join(missing)}")
+            except Exception as e:
+                st.error(f"Error processing message: {str(e)}")
 
     # Logic to upload offerings
     st.header("📤 Upload Offerings")
@@ -905,12 +930,13 @@ if prompt := st.chat_input("What can I help you with?"):
         # Tambahkan nama proyek ke dalam prompt sistem
         system_prompt += f"\n\n=== PROJECT NAME ===\n{selected_project}"
 
-        # Extract product name from query using the price_researcher mod
-        product_name = prompt
+        # Extract product name from query
+        product_name = extract_product_name(prompt)
 
         # Tambahkan nama produk ke dalam prompt sistem jika ditemukan
         if product_name:
             system_prompt += f"\n\n=== PRODUCT NAME ===\n{product_name}"
+            #print(f"Extracted product name: {product_name}")
 
         # Tambahkan konteks dari berbagai sumber
         context_info = []
@@ -925,7 +951,7 @@ if prompt := st.chat_input("What can I help you with?"):
                 ]
                 if matching_products:
                     context_info.append("""
-                    KNOWLEDGE BASE MATCHES:
+                    KNOWLEDGE BASE INFORMATION:
                     Ditemukan produk yang sesuai dalam knowledge base:
                     """)
                     for p in matching_products:
@@ -936,6 +962,7 @@ if prompt := st.chat_input("What can I help you with?"):
                         URL: {p['url']}
                         ---
                         """)
+                    print(f"Found {len(matching_products)} matching products in knowledge base.")
                 else:
                     # Jika tidak ada yang cocok persis, tampilkan semua data sebagai referensi
                     kb_info = format_knowledge_base(st.session_state.knowledge_base)
@@ -944,6 +971,7 @@ if prompt := st.chat_input("What can I help you with?"):
                     Tidak ditemukan produk yang persis sama. Berikut semua data yang tersedia:
                     {kb_info}
                     """)
+                    print("No exact match found in knowledge base. Displaying all available data.")
 
         # Tambahkan informasi dari platform e-commerce yang dipilih
         for platform in selected_platform:
@@ -1014,7 +1042,7 @@ if prompt := st.chat_input("What can I help you with?"):
             {' '.join(context_info)}
 
             When answering:
-            1. Please prioritize and check information from KNOWLEDGE BASE INFORMATION when available. Please ensure to give confirmation to user whether it's available or not
+            1. Please prioritize and take information from KNOWLEDGE BASE INFORMATION when available. Please ensure to give confirmation to user whether it's available or not
             2. Use live data from selected e-commerce platforms for current market comparison
             3. Always include relevant product links from all available sources
             4. Compare prices between knowledge base and current market data
@@ -1052,7 +1080,7 @@ if prompt := st.chat_input("What can I help you with?"):
         response_text = ""
         response_container = st.empty()
         for chunk in response:
-            if chunk.text:
+            if hasattr(chunk, "text") and chunk.text:
                 response_text += chunk.text
                 # Tambahkan kursor berkedip untuk efek visual
                 response_container.markdown(response_text + "▌")
